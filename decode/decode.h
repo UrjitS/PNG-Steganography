@@ -3,7 +3,9 @@
 
 #include "utils.h"
 
-int handle_decode(struct cmd_arguments * arguments);
+#define MAX_FILENAME 512
+
+int handle_decode(const struct cmd_arguments * arguments);
 
 
 

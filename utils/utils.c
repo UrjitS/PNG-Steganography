@@ -167,11 +167,13 @@ int validate_png_size(struct png_handler * png_handler, const long message_size)
     fprintf(stdout, "PNG Interlace: %d\n", interlace);
 
     const long number_of_pixels = png_handler->height * png_handler->width;
-    const long numerator = number_of_pixels * bit_depth;
-    const long png_capacity = numerator / 8;
 
-    fprintf(stdout, "PNG capacity: %lu\n", png_capacity);
-    fprintf(stdout, "Message size: %lu\n", message_size);
+    // Each pixel stores 2 bits (1 bit in Green channel LSB + 1 bit in Blue channel LSB)
+    // Each byte of message needs 8 bits = 4 pixels
+    const long png_capacity = number_of_pixels / 4;
+
+    fprintf(stdout, "PNG capacity: %lu bytes\n", png_capacity);
+    fprintf(stdout, "Message size: %lu bytes\n", message_size);
 
     if (png_capacity < message_size) {
         fprintf(stdout, "The provided PNG cannot fit the message contents");
