@@ -21,10 +21,6 @@ bool get_bit(const int number, const int index) {
     return (number & (1 << index)) != 0;
 }
 
-int set_bit(const int number, const int index) {
-    return number | (1 << index);
-}
-
 int set_last_bit(const int number, const bool bit) {
     if (bit) {
         return number | 1;
@@ -32,91 +28,65 @@ int set_last_bit(const int number, const bool bit) {
     return number & ~1;
 }
 
-void encode_png(const char * output_filename, const char * message_chunk, const unsigned long message_chunk_size, struct png_handler * png_handler) {
-    png_byte * row_pointers[png_handler->height];
-
-    for (int row = 0; row < png_handler->height; row++)
-        row_pointers[row] = nullptr;
-
-    for (int row = 0; row < png_handler->height; row++) {
-        row_pointers[row] = png_malloc(png_handler->png_ptr, png_get_rowbytes(png_handler->png_ptr, png_handler->info_ptr));
-    }
-
-    png_read_image(png_handler->png_ptr, row_pointers);
-
+unsigned int encode_png(png_byte * row_pointers[], const char * message_chunk, const unsigned long message_chunk_size, const struct png_handler * png_handler, unsigned int start_pixel_index) {
     const int channels = png_get_channels(png_handler->png_ptr, png_handler->info_ptr);
 
-    for (int row = 0; row < png_handler->height; row++) {
-        for (int col = 0; col < png_handler->width; col++) {
-            const int pixel_offset = col * channels;
-            // RGB or RGBA
-            // printf("R: %hhu, G: %hhu, B: %hhu\n",
-            //        row_pointers[row][pixel_offset],     // R
-            //        row_pointers[row][pixel_offset + 1], // G
-            //        row_pointers[row][pixel_offset + 2]  // B
-            // );
-            // row_pointers[row][pixel_offset] = set_bit(row_pointers[row][pixel_offset], 0);
-            // row_pointers[row][pixel_offset + 1] = set_bit(row_pointers[row][pixel_offset + 1], 0);
-            // row_pointers[row][pixel_offset + 2] = set_bit(row_pointers[row][pixel_offset + 2], 0);
+    unsigned int pixel_index = start_pixel_index;
+    const unsigned int total_pixels = png_handler->height * png_handler->width;
 
-            // printf("R: %hhu, G: %hhu, B: %hhu\n",
-            //        row_pointers[row][pixel_offset],     // R
-            //        row_pointers[row][pixel_offset + 1], // G
-            //        row_pointers[row][pixel_offset + 2]  // B
-            // );
+    for (int index = 0; index < message_chunk_size && pixel_index < total_pixels; index++) {
+        const int character_ord = (unsigned char) message_chunk[index];
 
-            for (int index = 0; index < message_chunk_size; index++) {
-                const int character_ord = (unsigned char) message_chunk[index];
+        for (int current_bit_index = 0; current_bit_index < 8 && pixel_index < total_pixels; current_bit_index += 2, pixel_index++) {
+            const unsigned int row = pixel_index / png_handler->width;
+            const unsigned int col = pixel_index % png_handler->width;
+            const unsigned int pixel_offset = col * channels;
 
-                for (int current_bit_index = 0; current_bit_index < 8; current_bit_index += 2) {
-                    row_pointers[row][pixel_offset + 1] = set_last_bit(row_pointers[row][pixel_offset + 1], get_bit(character_ord, current_bit_index));     // G
-                    row_pointers[row][pixel_offset + 2] = set_last_bit(row_pointers[row][pixel_offset + 2], get_bit(character_ord, current_bit_index + 1)); // B
-                }
-                // printf("Character: %c\n", message_chunk[index]);
-            }
+            row_pointers[row][pixel_offset + 1] = set_last_bit(row_pointers[row][pixel_offset + 1], get_bit(character_ord, current_bit_index));
+            row_pointers[row][pixel_offset + 2] = set_last_bit(row_pointers[row][pixel_offset + 2], get_bit(character_ord, current_bit_index + 1));
         }
     }
 
-    fclose(png_handler->png_file_ptr);
-    png_destroy_read_struct(&png_handler->png_ptr, &png_handler->info_ptr, nullptr);
-
-    save_png(output_filename, row_pointers, png_handler);
-
-    for (int row = 0; row < png_handler->height; row++) {
-        free(row_pointers[row]);
-    }
+    return pixel_index;
 }
 
-void encode_data(struct png_handler * png_handler, const struct cmd_arguments * arguments, const long message_size) {
+
+void encode_data(png_byte * row_pointers[], const struct png_handler * png_handler, const struct cmd_arguments * arguments, const long message_size, const unsigned int start_pixel_index) {
     char * chunk;
     long total_bytes_read = 0;
     long last_bytes_read = 0;
+    unsigned int pixel_index = start_pixel_index;
 
     errno = 0;
 
     while ((chunk = encrypt_message(arguments->message_fd, 512, arguments->ceaser_rotations, &total_bytes_read)) != NULL) {
-        encode_png(arguments->copy_png_path, chunk, (total_bytes_read - last_bytes_read), png_handler);
+        pixel_index = encode_png(row_pointers, chunk, (total_bytes_read - last_bytes_read), png_handler, pixel_index);
         last_bytes_read = total_bytes_read;
         free(chunk);
     }
 
     if (errno != 0) {
-        // panic
         fprintf(stderr, "An error occurred attempting to encode the message: %s\n", strerror(errno));
     }
 
     assert(total_bytes_read == message_size);
 }
 
-void encode_header_data(struct png_handler * png_handler, const char * output_filename, char * message_filename, const long message_size) {
+unsigned int encode_header_data(png_byte * row_pointers[], const struct png_handler * png_handler, char * message_filename, const long message_size, const long ceaser_rotations) {
     char header_data[1024];
     const unsigned long header_size = HEADER_STATIC_SIZE + strlen(message_filename) + count_digits(message_size);
 
     snprintf(header_data, 1024, "png_%s_%lu_", message_filename, message_size);
     header_data[header_size] = '\0';
 
-    encode_png(output_filename, header_data, header_size, png_handler);
+    // Encrypt the header data
+    for (unsigned long index = 0; index < header_size; ++index) {
+        header_data[index] = header_data[index] + ceaser_rotations;
+    }
+
+    return encode_png(row_pointers, header_data, header_size, png_handler, 0);
 }
+
 
 int handle_encode(const struct cmd_arguments * arguments) {
     int return_value = verify_arguments(arguments);
@@ -156,11 +126,30 @@ int handle_encode(const struct cmd_arguments * arguments) {
         return -1;
     }
 
-    // encode_data(png_handler, arguments, message_size);
-    encode_header_data(png_handler, arguments->copy_png_path, arguments->message_path, message_size);
+    png_byte * row_pointers[png_handler->height];
 
-    // destroy_png_handler(png_handler);
+    for (int row = 0; row < png_handler->height; row++)
+        row_pointers[row] = nullptr;
+
+    for (int row = 0; row < png_handler->height; row++) {
+        row_pointers[row] = png_malloc(png_handler->png_ptr, png_get_rowbytes(png_handler->png_ptr, png_handler->info_ptr));
+    }
+
+    png_read_image(png_handler->png_ptr, row_pointers);
+
+    const unsigned int header_end_pixel = encode_header_data(row_pointers, png_handler, arguments->message_path, message_size, arguments->ceaser_rotations);
+
+    encode_data(row_pointers, png_handler, arguments, message_size, header_end_pixel);
+
+    fclose(png_handler->png_file_ptr);
+    png_destroy_read_struct(&png_handler->png_ptr, &png_handler->info_ptr, nullptr);
+
+    save_png(arguments->copy_png_path, row_pointers, png_handler);
+
+    for (int row = 0; row < png_handler->height; row++) {
+        free(row_pointers[row]);
+    }
+
     free(png_handler);
-
     return 0;
 }

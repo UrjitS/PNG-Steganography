@@ -6,17 +6,19 @@
 
 
 char * encrypt_message(const int message_fd, const long chunk_size, const long ceaser_rotations, long * total_bytes_read) {
-    char * message_buffer = malloc(chunk_size);
+    unsigned char * message_buffer = malloc(chunk_size);
     if (message_buffer == NULL) {
         return nullptr;
     }
 
     const ssize_t read_bytes = read(message_fd, message_buffer, chunk_size);
     if (read_bytes == 0) {
+        free(message_buffer);
         return nullptr;
     }
     if (read_bytes == -1) {
         fprintf(stderr, "Read encountered an error\n");
+        free(message_buffer);
         return nullptr;
     }
 
@@ -25,7 +27,7 @@ char * encrypt_message(const int message_fd, const long chunk_size, const long c
         message_buffer[index] = message_buffer[index] + ceaser_rotations;
     }
 
-    return message_buffer;
+    return (char *)message_buffer;
 }
 
 

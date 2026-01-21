@@ -56,14 +56,16 @@ void parse_arguments(const int argc, char * argv[], struct cmd_arguments * argum
 }
 
 int handle_arguments(struct cmd_arguments * arguments) {
-    // Check to see if the message file exists
-    const int message_fd = open(arguments->message_path, O_RDONLY);
-    if (message_fd == -1) {
-        fprintf(stderr, "Failed to open message file: %s", strerror(errno));
-        return -1;
+    if (!arguments->decode_flag) {
+        // Check to see if the message file exists
+        const int message_fd = open(arguments->message_path, O_RDONLY);
+        if (message_fd == -1) {
+            fprintf(stderr, "Failed to open message file: %s", strerror(errno));
+            return -1;
+        }
+        arguments->message_fd = message_fd;
+        arguments->copy_png_path = "./output.png";
     }
-
-    arguments->message_fd = message_fd;
 
     // Check to see if the PNG file exists
     const int png_fd = open(arguments->png_path, O_RDONLY);
@@ -73,8 +75,6 @@ int handle_arguments(struct cmd_arguments * arguments) {
     }
 
     close(png_fd);
-
-    arguments->copy_png_path = "./output.png";
 
     // Check to see if the PNG is a PNG
     if (strstr(arguments->png_path, ".png") == NULL) {
@@ -109,13 +109,17 @@ int main (const int argc, char * argv[]) {
     }
 
     if (return_value == -1) {
-        close(arguments->message_fd);
+        if (!arguments->decode_flag) {
+            close(arguments->message_fd);
+        }
         free(arguments);
         return EXIT_FAILURE;
     }
 
 
-    close(arguments->message_fd);
+    if (!arguments->decode_flag) {
+        close(arguments->message_fd);
+    }
     free(arguments);
     return EXIT_SUCCESS;
 }
